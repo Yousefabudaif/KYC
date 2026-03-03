@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Identity Verification - KYC Portal</title>
+    <meta name="description" content="Verify your identity using your ID card">
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="https://unpkg.com/@didit-protocol/sdk-web/dist/didit-sdk.umd.min.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <div class="nav">
+            <span class="nav-brand">🛡️ KYC Portal</span>
+            <div class="nav-actions">
+                <span id="userEmail" class="text-muted" style="font-size: 0.85rem;"></span>
+                <button onclick="logout()" class="btn btn-sm btn-outline">Logout</button>
+            </div>
+        </div>
+
+        <!-- Steps indicator -->
+        <div class="steps">
+            <div class="step completed">
+                <div class="step-dot">✓</div>
+            </div>
+            <div class="step-line"></div>
+            <div class="step active">
+                <div class="step-dot">2</div>
+            </div>
+            <div class="step-line"></div>
+            <div class="step">
+                <div class="step-dot">3</div>
+            </div>
+            <div class="step-line"></div>
+            <div class="step">
+                <div class="step-dot">4</div>
+            </div>
+        </div>
+
+        <!-- Initial state: Start verification -->
+        <div id="startSection" class="card page-section">
+            <div class="card-header">
+                <h2>Identity Verification</h2>
+                <p>We need to verify your identity using your ID card. This process is quick and secure.</p>
+            </div>
+
+            <div id="alertBox" class="alert"></div>
+
+            <div
+                style="background: var(--bg-glass); border-radius: var(--radius-md); padding: 1.25rem; margin-bottom: 1.5rem;">
+                <p style="font-size: 0.9rem; color: var(--text-secondary); line-height: 1.7;">
+                    📸 <strong>What you'll need:</strong><br>
+                    • A valid government-issued ID card<br>
+                    • A working camera on your device<br>
+                    • Good lighting conditions
+                </p>
+            </div>
+
+            <button id="startBtn" onclick="startVerification()" class="btn btn-primary">
+                <span class="spinner"></span>
+                <span class="btn-text">🚀 Start Verification</span>
+            </button>
+
+            <!-- Debug info (hidden by default, shown on errors) -->
+            <div id="debugInfo"
+                style="display: none; margin-top: 1rem; padding: 1rem; background: rgba(239, 68, 68, 0.1); border-radius: var(--radius-md); font-size: 0.8rem; color: #fca5a5; word-break: break-all;">
+            </div>
+        </div>
+
+        <!-- Status section: Shows after verification -->
+        <div id="statusSection" class="card page-section" style="display: none;">
+            <div id="successStatus" class="kyc-status success" style="display: none;">
+                <div class="status-icon">✅</div>
+                <h3>Verification Successful!</h3>
+                <p>Your identity has been verified. You can now proceed to the next step.</p>
+                <button onclick="window.location.href='/pdf.html'" class="btn btn-success">
+                    ➡️ Continue to Next Step
+                </button>
+            </div>
+
+            <div id="failedStatus" class="kyc-status failed" style="display: none;">
+                <div class="status-icon">❌</div>
+                <h3>Verification Failed</h3>
+                <p id="failedMessage">Your verification could not be completed. Please try again.</p>
+                <button onclick="retryVerification()" class="btn btn-primary mt-2">
+                    🔄 Retry Verification
+                </button>
+            </div>
+
+            <div id="pendingStatus" class="kyc-status pending" style="display: none;">
+                <div class="status-icon">⏳</div>
+                <h3>Verification Incomplete</h3>
+                <p>Your verification was not completed. Please continue to finish the process.</p>
+                <button id="continueBtn" onclick="continueVerification()" class="btn btn-primary mt-2">
+                    ▶️ Continue Verification
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentSessionId = null;
+        let currentVerificationUrl = null;
+
+        // Check if DiditSDK loaded
+        if (typeof DiditSDK === 'undefined') {
+            console.error('DiditSDK failed to load from CDN');
+            document.getElementById('alertBox').textContent = 'Verification SDK failed to load. Please refresh the page.';
+            document.getElementById('alertBox').className = 'alert alert-error show';
+        }
+
+        const { DiditSdk } = typeof DiditSDK !== 'undefined' ? DiditSDK : {};
+
+        // Check authentication and existing KYC status
+        async function init() {
+            try {
+                const res = await fetch('/api/me');
+                if (!res.ok) {
+                    window.location.href = '/login.html';
+                    return;
+                }
+                const data = await res.json();
+                document.getElementById('userEmail').textContent = data.user.email;
+
+                // Check existing KYC status
+                if (data.kyc) {
+                    currentSessionId = data.kyc.session_id;
+                    if (data.kyc.status === 'Approved') {
+                        showStatus('success');
+                    } else if (data.kyc.status === 'Declined') {
+                        showStatus('failed');
+                    } else if (['pending', 'Pending', 'In Progress', 'Not Started'].includes(data.kyc.status)) {
+                        // User has an existing incomplete session — show start (they'll create a new one or continue)
+                        // Don't auto-show pending, let them click start
+                    }
+                }
+
+                // If already completed signup, redirect
+                if (data.signup) {
+                    window.location.href = '/success.html';
+                }
+            } catch (err) {
+                console.error('Init error:', err);
+            }
+        }
+
+        function showAlert(message, type = 'error') {
+            const alert = document.getElementById('alertBox');
+            alert.textContent = message;
+            alert.className = `alert alert-${type} show`;
+        }
+
+        function showDebug(info) {
+            const debug = document.getElementById('debugInfo');
+            debug.textContent = typeof info === 'object' ? JSON.stringify(info, null, 2) : info;
+            debug.style.display = 'block';
+        }
+
+        function showStatus(status) {
+            document.getElementById('startSection').style.display = 'none';
+            document.getElementById('statusSection').style.display = 'block';
+            document.getElementById('successStatus').style.display = status === 'success' ? 'block' : 'none';
+            document.getElementById('failedStatus').style.display = status === 'failed' ? 'block' : 'none';
+            document.getElementById('pendingStatus').style.display = status === 'pending' ? 'block' : 'none';
+        }
+
+        // Set up Didit SDK callbacks
+        if (DiditSdk) {
+            DiditSdk.shared.onComplete = async (result) => {
+                console.log('Verification result:', JSON.stringify(result));
+
+                switch (result.type) {
+                    case 'completed':
+                        currentSessionId = result.session?.sessionId || currentSessionId;
+                        const status = result.session?.status;
+                        console.log('Verification completed, status:', status, 'sessionId:', currentSessionId);
+
+                        // Update status in our backend
+                        try {
+                            await fetch('/api/kyc/update-status', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    sessionId: currentSessionId,
+                                    status: status
+                                })
+                            });
+                        } catch (e) {
+                            console.error('Failed to update status:', e);
+                        }
+
+                        if (status === 'Approved') {
+                            showStatus('success');
+                        } else if (status === 'Declined') {
+                            showStatus('failed');
+                        } else {
+                            // Pending, In Review, etc.
+                            showStatus('pending');
+                        }
+                        break;
+
+                    case 'cancelled':
+                        currentSessionId = result.session?.sessionId || currentSessionId;
+                        console.log('Verification cancelled, sessionId:', currentSessionId);
+                        showStatus('pending');
+                        break;
+
+                    case 'failed':
+                        console.error('Verification failed:', result.error);
+                        const errorMsg = result.error?.message || 'Verification failed. Please try again.';
+                        document.getElementById('failedMessage').textContent = errorMsg;
+                        showStatus('failed');
+                        break;
+                }
+            };
+
+            DiditSdk.shared.onStateChange = (state, error) => {
+                console.log('SDK State:', state, error || '');
+            };
+
+            // Listen for events to capture sessionId early
+            DiditSdk.shared.onEvent = (event) => {
+                console.log('SDK Event:', event.type, JSON.stringify(event.data || {}));
+                if (event.data?.sessionId) {
+                    currentSessionId = event.data.sessionId;
+                }
+            };
+        }
+
+        async function startVerification() {
+            const btn = document.getElementById('startBtn');
+            btn.classList.add('loading');
+            btn.disabled = true;
+            document.getElementById('debugInfo').style.display = 'none';
+
+            try {
+                console.log('Creating verification session...');
+
+                // Create a session via our backend
+                const res = await fetch('/api/kyc/create-session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const data = await res.json();
+                console.log('Create session response:', JSON.stringify(data));
+
+                if (!res.ok) {
+                    showAlert(data.error || 'Failed to create verification session');
+                    showDebug(data);
+                    btn.classList.remove('loading');
+                    btn.disabled = false;
+                    return;
+                }
+
+                currentSessionId = data.sessionId;
+                currentVerificationUrl = data.verificationUrl;
+                console.log('Session created:', currentSessionId);
+                console.log('Verification URL:', currentVerificationUrl);
+
+                if (!currentVerificationUrl) {
+                    showAlert('No verification URL received from server');
+                    showDebug(data);
+                    btn.classList.remove('loading');
+                    btn.disabled = false;
+                    return;
+                }
+
+                // Start Didit SDK verification
+                console.log('Starting DiditSdk verification...');
+                DiditSdk.shared.startVerification({
+                    url: currentVerificationUrl,
+                    configuration: {
+                        loggingEnabled: true
+                    }
+                });
+
+            } catch (err) {
+                console.error('Start verification error:', err);
+                showAlert('Failed to start verification: ' + err.message);
+                showDebug({ error: err.message, stack: err.stack });
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+        }
+
+        async function retryVerification() {
+            // Create a new session for retry
+            document.getElementById('startSection').style.display = 'block';
+            document.getElementById('statusSection').style.display = 'none';
+            startVerification();
+        }
+
+        async function continueVerification() {
+            if (currentVerificationUrl) {
+                console.log('Continuing verification with URL:', currentVerificationUrl);
+                DiditSdk.shared.startVerification({
+                    url: currentVerificationUrl,
+                    configuration: { loggingEnabled: true }
+                });
+            } else {
+                // Need to create a new session
+                document.getElementById('startSection').style.display = 'block';
+                document.getElementById('statusSection').style.display = 'none';
+                await startVerification();
+            }
+        }
+
+        async function logout() {
+            await fetch('/api/logout', { method: 'POST' });
+            window.location.href = '/';
+        }
+
+        init();
+    </script>
+</body>
+
+</html>

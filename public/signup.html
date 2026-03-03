@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up - KYC Portal</title>
+    <meta name="description" content="Create your KYC verification account">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="brand">
+            <div class="brand-icon">📝</div>
+            <h1>Create Account</h1>
+            <p>Sign up to start your KYC verification</p>
+        </div>
+
+        <div class="card">
+            <div id="alertBox" class="alert"></div>
+
+            <form id="signupForm" onsubmit="handleSignup(event)">
+                <div class="form-group">
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" class="form-input" placeholder="your@email.com" required
+                        autocomplete="email">
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" class="form-input" placeholder="At least 6 characters" required
+                        minlength="6" autocomplete="new-password">
+                </div>
+
+                <div class="form-group">
+                    <label for="confirmPassword">Confirm Password</label>
+                    <input type="password" id="confirmPassword" class="form-input" placeholder="Re-enter your password"
+                        required minlength="6" autocomplete="new-password">
+                </div>
+
+                <button type="submit" id="submitBtn" class="btn btn-primary">
+                    <span class="spinner"></span>
+                    <span class="btn-text">Create Account</span>
+                </button>
+            </form>
+
+            <p class="footer-text">
+                Already have an account? <a href="/login.html" class="link">Sign In</a>
+            </p>
+        </div>
+    </div>
+
+    <script>
+        function showAlert(message, type = 'error') {
+            const alert = document.getElementById('alertBox');
+            alert.textContent = message;
+            alert.className = `alert alert-${type} show`;
+        }
+
+        async function handleSignup(e) {
+            e.preventDefault();
+            const btn = document.getElementById('submitBtn');
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+
+            if (password !== confirmPassword) {
+                showAlert('Passwords do not match');
+                return;
+            }
+
+            btn.classList.add('loading');
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/signup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    showAlert('Account created successfully! Redirecting...', 'success');
+                    setTimeout(() => window.location.href = '/kyc.html', 1000);
+                } else {
+                    showAlert(data.error || 'Signup failed');
+                }
+            } catch (err) {
+                showAlert('Network error. Please try again.');
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+
+</html>

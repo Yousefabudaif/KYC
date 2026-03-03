@@ -1,0 +1,26 @@
+{
+  "name": "kyc",
+  "version": "1.0.0",
+  "description": "KYC verification application with Didit integration",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "postinstall": "node scripts/install-tectonic.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "express-session": "^1.19.0",
+    "multer": "^2.1.0",
+    "node-fetch": "^2.7.0",
+    "pg": "^8.19.0"
+  }
+}

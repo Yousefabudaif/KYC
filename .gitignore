@@ -1,0 +1,10 @@
+node_modules/
+.env
+uploads/
+bin/
+test_warmup.tex
+test_warmup.pdf
+fix_db.js
+*.log
+.DS_Store
+Thumbs.db

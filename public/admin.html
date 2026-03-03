@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - KYC Portal</title>
+    <meta name="description" content="Admin dashboard for managing KYC signups">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+
+<body>
+    <div class="container container-wide">
+        <!-- Login Section -->
+        <div id="loginSection">
+            <div style="max-width: 420px; margin: 0 auto;">
+                <div class="brand">
+                    <div class="brand-icon" style="background: linear-gradient(135deg, #f59e0b, #ef4444);">⚙️</div>
+                    <h1>Admin Dashboard</h1>
+                    <p>Manage KYC signup applications</p>
+                </div>
+
+                <div class="card">
+                    <div id="loginAlert" class="alert"></div>
+                    <form onsubmit="handleAdminLogin(event)">
+                        <div class="form-group">
+                            <label for="username">Username</label>
+                            <input type="text" id="username" class="form-input" placeholder="Admin username" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="adminPassword">Password</label>
+                            <input type="password" id="adminPassword" class="form-input" placeholder="Admin password"
+                                required>
+                        </div>
+                        <button type="submit" id="loginBtn" class="btn btn-primary">
+                            <span class="spinner"></span>
+                            <span class="btn-text">🔐 Sign In as Admin</span>
+                        </button>
+                    </form>
+                    <p class="footer-text">
+                        <a href="/" class="link">← Back to main site</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dashboard Section -->
+        <div id="dashboardSection" style="display: none;">
+            <div class="nav">
+                <span class="nav-brand">⚙️ Admin Dashboard</span>
+                <div class="nav-actions">
+                    <button onclick="loadSignups()" class="btn btn-sm btn-outline">🔄 Refresh</button>
+                    <button onclick="adminLogout()" class="btn btn-sm btn-outline">Logout</button>
+                </div>
+            </div>
+
+            <!-- Stats -->
+            <div class="stats-grid" id="statsGrid">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalCount">0</div>
+                    <div class="stat-label">Total</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="pendingCount"
+                        style="background: linear-gradient(135deg, #f59e0b, #d97706); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
+                        0</div>
+                    <div class="stat-label">Pending</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="approvedCount"
+                        style="background: linear-gradient(135deg, #10b981, #059669); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
+                        0</div>
+                    <div class="stat-label">Approved</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="rejectedCount"
+                        style="background: linear-gradient(135deg, #ef4444, #dc2626); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
+                        0</div>
+                    <div class="stat-label">Rejected</div>
+                </div>
+            </div>
+
+            <!-- Filter Tabs -->
+            <div class="tab-filters">
+                <button class="tab-filter active" onclick="filterSignups('all', this)">All</button>
+                <button class="tab-filter" onclick="filterSignups('pending', this)">⏳ Pending</button>
+                <button class="tab-filter" onclick="filterSignups('approved', this)">✅ Approved</button>
+                <button class="tab-filter" onclick="filterSignups('rejected', this)">❌ Rejected</button>
+            </div>
+
+            <!-- Signups Table -->
+            <div class="card" style="padding: 0; overflow: hidden;">
+                <div id="tableContainer" class="admin-table-wrapper">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Email</th>
+                                <th>Name (Arabic)</th>
+                                <th>ID Number</th>
+                                <th>KYC Status</th>
+                                <th>Signature AI</th>
+                                <th>Signup Status</th>
+                                <th>Date</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="signupsBody">
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="emptyState" class="empty-state" style="display: none;">
+                    <div class="empty-icon">📋</div>
+                    <h4>No signups found</h4>
+                    <p>There are no applications matching your filter.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allSignups = [];
+        let currentFilter = 'all';
+
+        function showLoginAlert(message, type = 'error') {
+            const alert = document.getElementById('loginAlert');
+            alert.textContent = message;
+            alert.className = `alert alert-${type} show`;
+        }
+
+        async function handleAdminLogin(e) {
+            e.preventDefault();
+            const btn = document.getElementById('loginBtn');
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('adminPassword').value;
+
+            btn.classList.add('loading');
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/admin/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    document.getElementById('loginSection').style.display = 'none';
+                    document.getElementById('dashboardSection').style.display = 'block';
+                    loadSignups();
+                } else {
+                    showLoginAlert(data.error || 'Invalid credentials');
+                }
+            } catch (err) {
+                showLoginAlert('Network error. Please try again.');
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+        }
+
+        async function loadSignups() {
+            try {
+                const res = await fetch('/api/admin/signups');
+                if (!res.ok) {
+                    if (res.status === 403) {
+                        document.getElementById('loginSection').style.display = 'block';
+                        document.getElementById('dashboardSection').style.display = 'none';
+                        return;
+                    }
+                    throw new Error('Failed to load signups');
+                }
+
+                const data = await res.json();
+                allSignups = data.signups;
+                updateStats();
+                renderSignups();
+            } catch (err) {
+                console.error('Load signups error:', err);
+            }
+        }
+
+        function updateStats() {
+            document.getElementById('totalCount').textContent = allSignups.length;
+            document.getElementById('pendingCount').textContent = allSignups.filter(s => s.status === 'pending').length;
+            document.getElementById('approvedCount').textContent = allSignups.filter(s => s.status === 'approved').length;
+            document.getElementById('rejectedCount').textContent = allSignups.filter(s => s.status === 'rejected').length;
+        }
+
+        function filterSignups(filter, btn) {
+            currentFilter = filter;
+            document.querySelectorAll('.tab-filter').forEach(t => t.classList.remove('active'));
+            if (btn) btn.classList.add('active');
+            renderSignups();
+        }
+
+        function renderSignups() {
+            const filtered = currentFilter === 'all' ? allSignups : allSignups.filter(s => s.status === currentFilter);
+            const tbody = document.getElementById('signupsBody');
+            const empty = document.getElementById('emptyState');
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '';
+                empty.style.display = 'block';
+                return;
+            }
+
+            empty.style.display = 'none';
+            tbody.innerHTML = filtered.map(s => {
+                const conf = s.signature_confidence;
+                const confPct = conf != null ? (conf * 100).toFixed(1) + '%' : 'N/A';
+                const confColor = conf == null ? '#888' : conf > 0.5 ? '#10b981' : conf > 0.2 ? '#f59e0b' : '#ef4444';
+                const sigIcon = s.signature_detected ? '✅' : (conf != null ? '❌' : '—');
+                return `
+                <tr>
+                    <td>#${s.id}</td>
+                    <td>${escapeHtml(s.email)}</td>
+                    <td class="arabic-name">${escapeHtml(s.full_name_ar || 'N/A')}</td>
+                    <td>${escapeHtml(s.id_number || 'N/A')}</td>
+                    <td><span class="badge badge-${(s.kyc_status || '').toLowerCase()}">${s.kyc_status || 'N/A'}</span></td>
+                    <td>
+                        <span style="color:${confColor};font-weight:600">${sigIcon} ${confPct}</span>
+                    </td>
+                    <td><span class="badge badge-${s.status}">${s.status}</span></td>
+                    <td>${new Date(s.created_at).toLocaleDateString()}</td>
+                    <td>
+                        <div class="actions">
+                            ${s.status === 'pending' ? `
+                                <button onclick="approveSignup(${s.id})" class="btn btn-sm btn-success">✅</button>
+                                <button onclick="rejectSignup(${s.id})" class="btn btn-sm btn-danger">❌</button>
+                            ` : ''}
+                            ${s.has_document ? `
+                                <a href="/api/admin/download/${s.id}" class="btn btn-sm btn-outline">📥</a>
+                            ` : ''}
+                        </div>
+                    </td>
+                </tr>
+            `}).join('');
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function approveSignup(id) {
+            if (!confirm('Approve this signup?')) return;
+            try {
+                const res = await fetch(`/api/admin/approve/${id}`, { method: 'POST' });
+                if (res.ok) loadSignups();
+            } catch (err) {
+                console.error('Approve error:', err);
+            }
+        }
+
+        async function rejectSignup(id) {
+            if (!confirm('Reject this signup?')) return;
+            try {
+                const res = await fetch(`/api/admin/reject/${id}`, { method: 'POST' });
+                if (res.ok) loadSignups();
+            } catch (err) {
+                console.error('Reject error:', err);
+            }
+        }
+
+        function adminLogout() {
+            document.getElementById('loginSection').style.display = 'block';
+            document.getElementById('dashboardSection').style.display = 'none';
+        }
+    </script>
+</body>
+
+</html>

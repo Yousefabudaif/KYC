@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In - KYC Portal</title>
+    <meta name="description" content="Log in to your KYC verification account">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="brand">
+            <div class="brand-icon">🔑</div>
+            <h1>Welcome Back</h1>
+            <p>Sign in to continue your verification</p>
+        </div>
+
+        <div class="card">
+            <div id="alertBox" class="alert"></div>
+
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" class="form-input" placeholder="your@email.com" required
+                        autocomplete="email">
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" class="form-input" placeholder="Enter your password" required
+                        autocomplete="current-password">
+                </div>
+
+                <button type="submit" id="submitBtn" class="btn btn-primary">
+                    <span class="spinner"></span>
+                    <span class="btn-text">Sign In</span>
+                </button>
+            </form>
+
+            <p class="footer-text">
+                Don't have an account? <a href="/signup.html" class="link">Create Account</a>
+            </p>
+        </div>
+    </div>
+
+    <script>
+        function showAlert(message, type = 'error') {
+            const alert = document.getElementById('alertBox');
+            alert.textContent = message;
+            alert.className = `alert alert-${type} show`;
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const btn = document.getElementById('submitBtn');
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            btn.classList.add('loading');
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    showAlert('Login successful! Redirecting...', 'success');
+                    setTimeout(() => window.location.href = data.redirectTo || '/kyc.html', 1000);
+                } else {
+                    showAlert(data.error || 'Login failed');
+                }
+            } catch (err) {
+                showAlert('Network error. Please try again.');
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+
+</html>

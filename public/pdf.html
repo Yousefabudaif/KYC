@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Download & Sign Document - KYC Portal</title>
+    <meta name="description" content="Download your personalized pledge document, sign it, and upload">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="nav">
+            <span class="nav-brand">🛡️ KYC Portal</span>
+            <div class="nav-actions">
+                <span id="userEmail" class="text-muted" style="font-size: 0.85rem;"></span>
+                <button onclick="logout()" class="btn btn-sm btn-outline">Logout</button>
+            </div>
+        </div>
+
+        <!-- Steps indicator -->
+        <div class="steps">
+            <div class="step completed">
+                <div class="step-dot">✓</div>
+            </div>
+            <div class="step-line"></div>
+            <div class="step completed">
+                <div class="step-dot">✓</div>
+            </div>
+            <div class="step-line"></div>
+            <div class="step active">
+                <div class="step-dot">3</div>
+            </div>
+            <div class="step-line"></div>
+            <div class="step">
+                <div class="step-dot">4</div>
+            </div>
+        </div>
+
+        <div id="alertBox" class="alert"></div>
+
+        <!-- Step 1: Download PDF -->
+        <div id="downloadSection" class="card page-section">
+            <div class="card-header">
+                <h2>📄 Download Your Pledge Document</h2>
+                <p>Your personalized document has been generated with your details. Download, print, sign it, and then
+                    upload the signed copy.</p>
+            </div>
+
+            <div
+                style="background: var(--bg-glass); border-radius: var(--radius-md); padding: 1.25rem; margin-bottom: 1.5rem;">
+                <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem;">
+                    <span style="font-size: 1.5rem;">📋</span>
+                    <div>
+                        <strong style="display: block;">Pledge Document</strong>
+                        <span class="text-muted" style="font-size: 0.85rem;">Contains your name, ID number, and today's
+                            date</span>
+                    </div>
+                </div>
+
+                <div
+                    style="background: rgba(16, 185, 129, 0.1); border-radius: var(--radius-sm); padding: 0.75rem; margin-bottom: 1rem;">
+                    <p style="font-size: 0.85rem; color: #6ee7b7;">
+                        ✅ <strong id="userName">Your name</strong> &nbsp;|&nbsp;
+                        <strong id="userIdNumber">ID Number</strong> &nbsp;|&nbsp;
+                        <strong id="currentDate">Date</strong>
+                    </p>
+                </div>
+            </div>
+
+            <button onclick="downloadPDF()" id="downloadBtn" class="btn btn-primary" style="margin-bottom: 1rem;">
+                <span class="spinner"></span>
+                <span class="btn-text">📥 Download PDF</span>
+            </button>
+
+            <button id="nextToUploadBtn" onclick="showUploadSection()" class="btn btn-outline" style="display: none;">
+                ➡️ Next: Upload Signed Document
+            </button>
+        </div>
+
+        <!-- Step 2: Upload Signed PDF -->
+        <div id="uploadSection" class="card page-section" style="display: none;">
+            <div class="card-header">
+                <h2>📤 Upload Signed Document</h2>
+                <p>Upload the signed version of your pledge document</p>
+            </div>
+
+            <div
+                style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.2); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.5rem;">
+                <p style="font-size: 0.85rem; color: #fcd34d;">
+                    ⚠️ Please make sure you have signed the document before uploading.
+                </p>
+            </div>
+
+            <form id="uploadForm" onsubmit="handleUpload(event)">
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📁</div>
+                    <h4>Drop your signed PDF here</h4>
+                    <p>or click to browse files</p>
+                    <div id="fileName" class="file-name" style="display: none;"></div>
+                    <input type="file" id="fileInput" accept=".pdf,.jpg,.jpeg,.png,.webp"
+                        onchange="handleFileSelect(this)">
+                </div>
+
+                <button type="submit" id="uploadBtn" class="btn btn-success mt-2" disabled>
+                    <span class="spinner"></span>
+                    <span class="btn-text">📤 Upload Signed Document</span>
+                </button>
+            </form>
+
+            <button onclick="showDownloadSection()" class="btn btn-outline mt-2" style="font-size: 0.85rem;">
+                ← Back to Download
+            </button>
+        </div>
+    </div>
+
+    <script>
+        async function init() {
+            try {
+                const res = await fetch('/api/me');
+                if (!res.ok) { window.location.href = '/login.html'; return; }
+                const data = await res.json();
+
+                document.getElementById('userEmail').textContent = data.user.email;
+
+                // Check if KYC is not approved
+                if (!data.kyc || data.kyc.status !== 'Approved') {
+                    window.location.href = '/kyc.html';
+                    return;
+                }
+
+                // If already uploaded
+                if (data.signup && data.signup.signed_pdf_path) {
+                    window.location.href = '/success.html';
+                    return;
+                }
+
+                // Show user details
+                document.getElementById('userName').textContent = data.kyc.full_name_ar || 'N/A';
+                document.getElementById('userIdNumber').textContent = data.kyc.id_number || 'N/A';
+
+                const egyptDate = new Date().toLocaleDateString('ar-EG', {
+                    timeZone: 'Africa/Cairo',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                });
+                document.getElementById('currentDate').textContent = egyptDate;
+            } catch (err) {
+                console.error('Init error:', err);
+            }
+        }
+
+        function showAlert(message, type = 'error') {
+            const alert = document.getElementById('alertBox');
+            alert.textContent = message;
+            alert.className = `alert alert-${type} show`;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        async function downloadPDF() {
+            const btn = document.getElementById('downloadBtn');
+            btn.classList.add('loading');
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/pdf/generate');
+                if (!res.ok) throw new Error('Failed to generate PDF');
+
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'pledge.pdf';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                showAlert('PDF downloaded successfully!', 'success');
+                document.getElementById('nextToUploadBtn').style.display = 'block';
+            } catch (err) {
+                showAlert('Failed to download PDF. Please try again.');
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+        }
+
+        function showUploadSection() {
+            document.getElementById('downloadSection').style.display = 'none';
+            document.getElementById('uploadSection').style.display = 'block';
+        }
+
+        function showDownloadSection() {
+            document.getElementById('downloadSection').style.display = 'block';
+            document.getElementById('uploadSection').style.display = 'none';
+        }
+
+        function handleFileSelect(input) {
+            const file = input.files[0];
+            const area = document.getElementById('uploadArea');
+            const fileName = document.getElementById('fileName');
+            const uploadBtn = document.getElementById('uploadBtn');
+
+            if (file) {
+                area.classList.add('has-file');
+                fileName.textContent = `📄 ${file.name}`;
+                fileName.style.display = 'block';
+                uploadBtn.disabled = false;
+            } else {
+                area.classList.remove('has-file');
+                fileName.style.display = 'none';
+                uploadBtn.disabled = true;
+            }
+        }
+
+        // Drag and drop
+        const uploadArea = document.getElementById('uploadArea');
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const fileInput = document.getElementById('fileInput');
+            fileInput.files = e.dataTransfer.files;
+            handleFileSelect(fileInput);
+        });
+
+        async function handleUpload(e) {
+            e.preventDefault();
+            const btn = document.getElementById('uploadBtn');
+            const fileInput = document.getElementById('fileInput');
+
+            if (!fileInput.files[0]) {
+                showAlert('Please select a file first');
+                return;
+            }
+
+            btn.classList.add('loading');
+            btn.disabled = true;
+            btn.querySelector('.btn-text').textContent = '🔍 Verifying signature...';
+
+            try {
+                const formData = new FormData();
+                formData.append('signedPdf', fileInput.files[0]);
+
+                const res = await fetch('/api/pdf/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await res.json();
+
+                if (res.ok && data.success) {
+                    if (data.autoApproved) {
+                        showAlert('✅ ' + data.message, 'success');
+                        setTimeout(() => window.location.href = '/success.html', 1500);
+                    } else {
+                        showAlert('⚠️ ' + data.message, 'warning');
+                        setTimeout(() => window.location.href = '/success.html', 3000);
+                    }
+                } else if (data.error === 'no_signature') {
+                    showAlert('❌ ' + (data.message || 'No signature detected.'));
+                } else if (data.error === 'signature_service_error') {
+                    showAlert('⚠️ Signature verification service is temporarily unavailable. Please try again.');
+                } else {
+                    showAlert(data.message || data.error || 'Upload failed');
+                }
+            } catch (err) {
+                showAlert('Upload failed. Please try again.');
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+                btn.querySelector('.btn-text').textContent = '📤 Upload Signed Document';
+            }
+        }
+
+        async function logout() {
+            await fetch('/api/logout', { method: 'POST' });
+            window.location.href = '/';
+        }
+
+        init();
+    </script>
+</body>
+
+</html>
