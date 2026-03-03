@@ -778,12 +778,13 @@ app.get('/api/admin/signups', requireAdmin, async (req, res) => {
     try {
         const result = await pool.query(`
             SELECT 
-                s.id, s.status, s.created_at,
+                s.id, s.status, s.created_at, s.user_id,
                 s.signature_confidence, s.signature_detected,
                 s.signed_pdf_mimetype,
                 (s.signed_pdf_data IS NOT NULL) as has_document,
                 u.email,
-                k.full_name_ar, k.id_number, k.status as kyc_status
+                k.full_name_ar, k.id_number, k.status as kyc_status,
+                k.session_id as kyc_session_id
             FROM signups s
             JOIN users u ON s.user_id = u.id
             LEFT JOIN kyc_results k ON s.kyc_result_id = k.id
@@ -840,6 +841,66 @@ app.get('/api/admin/download/:id', requireAdmin, async (req, res) => {
     } catch (err) {
         console.error('Download error:', err);
         res.status(500).json({ error: 'Failed to download file' });
+    }
+});
+
+// Delete user and their Didit session
+app.delete('/api/admin/delete/:id', requireAdmin, async (req, res) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        // Get the signup to find user_id
+        const signup = await client.query(
+            'SELECT user_id FROM signups WHERE id = $1',
+            [req.params.id]
+        );
+        if (signup.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Signup not found' });
+        }
+
+        const userId = signup.rows[0].user_id;
+
+        // Get all KYC sessions for this user to delete from Didit
+        const kycSessions = await client.query(
+            'SELECT session_id FROM kyc_results WHERE user_id = $1',
+            [userId]
+        );
+
+        // Delete each session from Didit console
+        for (const row of kycSessions.rows) {
+            if (row.session_id) {
+                try {
+                    console.log('[Admin] Deleting Didit session:', row.session_id);
+                    await fetch(
+                        'https://verification.didit.me/v3/session/' + row.session_id + '/',
+                        {
+                            method: 'DELETE',
+                            headers: { 'x-api-key': process.env.DIDIT_API_KEY }
+                        }
+                    );
+                } catch (e) {
+                    console.error('[Admin] Failed to delete Didit session:', row.session_id, e.message);
+                    // Continue anyway — don't block local deletion
+                }
+            }
+        }
+
+        // Delete from local DB (order matters due to foreign keys)
+        await client.query('DELETE FROM signups WHERE user_id = $1', [userId]);
+        await client.query('DELETE FROM kyc_results WHERE user_id = $1', [userId]);
+        await client.query('DELETE FROM users WHERE id = $1', [userId]);
+
+        await client.query('COMMIT');
+        console.log('[Admin] Deleted user', userId, 'and', kycSessions.rows.length, 'Didit session(s)');
+        res.json({ success: true });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Delete error:', err);
+        res.status(500).json({ error: 'Failed to delete user' });
+    } finally {
+        client.release();
     }
 });
 
