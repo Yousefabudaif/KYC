@@ -5,6 +5,7 @@ bin/
 test_warmup.tex
 test_warmup.pdf
 fix_db.js
+Pledge*.pdf
 *.log
 .DS_Store
 Thumbs.db

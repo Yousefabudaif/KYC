@@ -91,10 +91,14 @@
 
             <div id="pendingStatus" class="kyc-status pending" style="display: none;">
                 <div class="status-icon">⏳</div>
-                <h3>Verification Incomplete</h3>
-                <p>Your verification was not completed. Please continue to finish the process.</p>
-                <button id="continueBtn" onclick="continueVerification()" class="btn btn-primary mt-2">
-                    ▶️ Continue Verification
+                <h3>Verification Under Review</h3>
+                <p>Your verification is being processed. This page will update automatically when the review is
+                    complete.</p>
+                <button onclick="checkStatusFromDidit(currentSessionId)" class="btn btn-primary mt-2">
+                    🔄 Check Status Now
+                </button>
+                <button onclick="retryVerification()" class="btn btn-outline mt-2" style="font-size:0.85rem;">
+                    ▶️ Start New Verification
                 </button>
             </div>
         </div>
@@ -131,9 +135,10 @@
                         showStatus('success');
                     } else if (data.kyc.status === 'Declined') {
                         showStatus('failed');
-                    } else if (['pending', 'Pending', 'In Progress', 'Not Started'].includes(data.kyc.status)) {
-                        // User has an existing incomplete session — show start (they'll create a new one or continue)
-                        // Don't auto-show pending, let them click start
+                    } else if (currentSessionId && !['Not Started'].includes(data.kyc.status)) {
+                        // Non-final status — poll Didit to see if it changed
+                        showStatus('pending');
+                        checkStatusFromDidit(currentSessionId);
                     }
                 }
 
@@ -143,6 +148,36 @@
                 }
             } catch (err) {
                 console.error('Init error:', err);
+            }
+        }
+
+        // Poll Didit for the latest status
+        let statusCheckInterval = null;
+        async function checkStatusFromDidit(sessionId) {
+            try {
+                console.log('Checking Didit status for session:', sessionId);
+                const res = await fetch('/api/kyc/check-status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId })
+                });
+                const data = await res.json();
+                console.log('Check status result:', data.status);
+
+                if (data.status === 'Approved') {
+                    if (statusCheckInterval) clearInterval(statusCheckInterval);
+                    showStatus('success');
+                } else if (data.status === 'Declined') {
+                    if (statusCheckInterval) clearInterval(statusCheckInterval);
+                    showStatus('failed');
+                } else {
+                    // Still pending — start auto-polling every 10 seconds
+                    if (!statusCheckInterval) {
+                        statusCheckInterval = setInterval(() => checkStatusFromDidit(sessionId), 10000);
+                    }
+                }
+            } catch (err) {
+                console.error('Check status error:', err);
             }
         }
 
@@ -196,8 +231,9 @@
                         } else if (status === 'Declined') {
                             showStatus('failed');
                         } else {
-                            // Pending, In Review, etc.
+                            // Pending/In Review — show pending and start polling
                             showStatus('pending');
+                            checkStatusFromDidit(currentSessionId);
                         }
                         break;
 

@@ -270,6 +270,71 @@ app.post('/api/kyc/create-session', requireAuth, async (req, res) => {
     }
 });
 
+// Re-check KYC status by polling Didit API for the latest decision
+app.post('/api/kyc/check-status', requireAuth, async (req, res) => {
+    try {
+        const { sessionId } = req.body;
+        if (!sessionId) return res.status(400).json({ error: 'sessionId required' });
+
+        console.log('[KYC] Checking status from Didit for session:', sessionId);
+
+        // Fetch current decision from Didit
+        const detailsResponse = await fetch(
+            'https://verification.didit.me/v3/session/' + sessionId + '/decision/',
+            { headers: { 'x-api-key': process.env.DIDIT_API_KEY } }
+        );
+
+        if (!detailsResponse.ok) {
+            console.log('[KYC] Didit returned', detailsResponse.status);
+            return res.json({ status: 'pending', message: 'Verification still in progress' });
+        }
+
+        const details = JSON.parse(await detailsResponse.text());
+        const diditStatus = details.status || details.session_status;
+        console.log('[KYC] Didit current status:', diditStatus);
+
+        // Map Didit status to our status
+        var mappedStatus;
+        if (diditStatus === 'Approved') {
+            mappedStatus = 'Approved';
+        } else if (diditStatus === 'Declined') {
+            mappedStatus = 'Declined';
+        } else {
+            mappedStatus = diditStatus || 'pending';
+        }
+
+        // If now Approved, extract user data
+        if (mappedStatus === 'Approved') {
+            let fullNameAr = '';
+            let idNumber = '';
+
+            const idvArray = details.id_verifications;
+            if (Array.isArray(idvArray) && idvArray.length > 0) {
+                const idv = idvArray[0];
+                fullNameAr = idv.full_name || '';
+                idNumber = idv.personal_number || idv.document_number || '';
+            }
+
+            console.log('[KYC] Now approved! Name:', fullNameAr, 'ID:', idNumber);
+
+            await pool.query(
+                'UPDATE kyc_results SET status = $1, full_name_ar = $2, id_number = $3, verification_data = $4, updated_at = NOW() WHERE session_id = $5 AND user_id = $6',
+                [mappedStatus, fullNameAr, idNumber, JSON.stringify(details), sessionId, req.session.userId]
+            );
+        } else {
+            await pool.query(
+                'UPDATE kyc_results SET status = $1, updated_at = NOW() WHERE session_id = $2 AND user_id = $3',
+                [mappedStatus, sessionId, req.session.userId]
+            );
+        }
+
+        res.json({ status: mappedStatus });
+    } catch (err) {
+        console.error('[KYC] Check status error:', err);
+        res.status(500).json({ error: 'Failed to check status' });
+    }
+});
+
 // Fetch session decision from Didit API and store user details
 app.post('/api/kyc/update-status', requireAuth, async (req, res) => {
     try {
